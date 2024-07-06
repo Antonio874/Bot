@@ -57,33 +57,50 @@ class VacancyModelShema(ma.SQLAlchemyAutoSchema):
     class Meta:
         model = VacancyModel
 
+class region(Resource):
+    @staticmethod
+    def get(area):
+        url = 'https://api.hh.ru/areas'
+        response = requests.get(url)
+        if response.status_code == 200:
+            regs = response.json()
+        reg_id = serch(regs, area)
+        if reg_id != 0:
+            return {"id": reg_id}
+        else:
+            return {"mesenge": "region not found"}
 
-def get_data_from_hh(url):
-    user = get_headers()
-    data = requests.get(url, headers=user['headers'], timeout=5).json()
-    return data
+class Vacancy(Resource):
+    @staticmethod
+    def get():
+        vacancy = request.args.get('vacancy')
+        salary_from = request.args.get('salaryFrom')
+        salary_to = request.args.get('salaryTo')
+        time_day = request.args.get('timeDay', '')
+        area = request.args.get('area')
+        add_name(vacancy, area)
+        vacancy_shema = VacancyModelShema(many=True)
+        if time_day in ["Полная занятость", "Частичная занятость"]:
+            return vacancy_shema.dump(VacancyModel.query.filter(VacancyModel.salaryFrom >= salary_from)
+                                      .filter(VacancyModel.salaryTo <= salary_to)
+                                      .filter(VacancyModel.timeDay == time_day).all())
+        else:
+            return vacancy_shema.dump(VacancyModel.query.filter(VacancyModel.salaryFrom >= salary_from)
+                                      .filter(VacancyModel.salaryTo <= salary_to).all())
 
-
-def get_headers():
-    headers = {
-        'user-agent': os.getenv('USER_AGENT')}
-    persona = {
-        'headers': headers
-    }
-    return persona
-
-def reset_table():
+def add_name(text, area):
     al = VacancyModel.query.all()
     for a in range(len(al)):
         x = VacancyModel.query.get(al[a].id)
         db.session.delete(x)
         db.session.commit()
-
-
-def add_name(text, area):
-    reset_table()
     url = f'https://api.hh.ru/vacancies?text={text}&search_field=name&per_page=100&area={area}'
-    data = get_data_from_hh(url)
+    headers = {
+        'user-agent': os.getenv('USER_AGENT')}
+    user = {
+        'headers': headers
+    }
+    data = requests.get(url, headers=user['headers'], timeout=5).json()
     parser(data, text, area)
 
 
@@ -93,7 +110,12 @@ def parser(data, text, area):
     id = 1
     while page < quantity_pagination and page < 20:
         url = f'https://api.hh.ru/vacancies?text={text}&search_field=name&per_page=100&page={page}&area={area}'
-        data = get_data_from_hh(url)
+        headers = {
+            'user-agent': os.getenv('USER_AGENT')}
+        user = {
+            'headers': headers
+        }
+        data = requests.get(url, headers=user['headers'], timeout=5).json()
         for vacancy in data['items']:
             if vacancy['address'] is None:
                 adress = 'Нет адресса'
@@ -143,40 +165,6 @@ def serch(regs, area):
                 if reg_id != 0:
                     return reg_id
     return 0
-
-
-class Vacancy(Resource):
-    @staticmethod
-    def get():
-        vacancy = request.args.get('vacancy')
-        salary_from = request.args.get('salaryFrom')
-        salary_to = request.args.get('salaryTo')
-        time_day = request.args.get('timeDay', '')
-        area = request.args.get('area')
-        add_name(vacancy, area)
-        vacancy_shema = VacancyModelShema(many=True)
-        if time_day in ["Полная занятость", "Частичная занятость"]:
-            return vacancy_shema.dump(VacancyModel.query.filter(VacancyModel.salaryFrom >= salary_from)
-                                      .filter(VacancyModel.salaryTo <= salary_to)
-                                      .filter(VacancyModel.timeDay == time_day).all())
-        else:
-            return vacancy_shema.dump(VacancyModel.query.filter(VacancyModel.salaryFrom >= salary_from)
-                                      .filter(VacancyModel.salaryTo <= salary_to).all())
-
-
-class region(Resource):
-    @staticmethod
-    def get(area):
-        url = 'https://api.hh.ru/areas'
-        response = requests.get(url)
-        if response.status_code == 200:
-            regs = response.json()
-        reg_id = serch(regs, area)
-        if reg_id != 0:
-            return {"id": reg_id}
-        else:
-            return {"mesenge": "region not found"}
-
 
 api.add_resource(Vacancy, '/vacancy')
 api.add_resource(region, '/region/<string:area>')
